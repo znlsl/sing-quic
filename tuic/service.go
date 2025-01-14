@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go"
+	qtls "github.com/sagernet/sing-quic"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/baderror"
