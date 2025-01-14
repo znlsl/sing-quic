@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go"
-	"github.com/sagernet/sing-quic"
+	qtls "github.com/sagernet/sing-quic"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/baderror"
@@ -45,12 +45,13 @@ type ServiceHandler interface {
 }
 
 type Service[U comparable] struct {
-	ctx               context.Context
-	logger            logger.Logger
-	tlsConfig         aTLS.ServerConfig
-	heartbeat         time.Duration
-	quicConfig        *quic.Config
-	userMap           map[[16]byte]U
+	ctx        context.Context
+	logger     logger.Logger
+	tlsConfig  aTLS.ServerConfig
+	heartbeat  time.Duration
+	quicConfig *quic.Config
+	//userMap           map[[16]byte]U
+	userMap           map[[16]byte][]U // 每个 UUID 对应多个用户
 	passwordMap       map[U]string
 	congestionControl string
 	authTimeout       time.Duration
@@ -95,11 +96,22 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 	}, nil
 }
 
+// func (s *Service[U]) UpdateUsers(userList []U, uuidList [][16]byte, passwordList []string) {
+// 	userMap := make(map[[16]byte]U)
+// 	passwordMap := make(map[U]string)
+// 	for index := range userList {
+// 		userMap[uuidList[index]] = userList[index]
+// 		passwordMap[userList[index]] = passwordList[index]
+// 	}
+// 	s.userMap = userMap
+// 	s.passwordMap = passwordMap
+// }
+
 func (s *Service[U]) UpdateUsers(userList []U, uuidList [][16]byte, passwordList []string) {
-	userMap := make(map[[16]byte]U)
+	userMap := make(map[[16]byte][]U)
 	passwordMap := make(map[U]string)
 	for index := range userList {
-		userMap[uuidList[index]] = userList[index]
+		userMap[uuidList[index]] = append(userMap[uuidList[index]], userList[index])
 		passwordMap[userList[index]] = passwordList[index]
 	}
 	s.userMap = userMap
@@ -245,19 +257,29 @@ func (s *serverSession[U]) handleUniStream(stream quic.ReceiveStream) error {
 		}
 		var userUUID [16]byte
 		copy(userUUID[:], buffer.Range(2, 2+16))
-		user, loaded := s.userMap[userUUID]
-		if !loaded {
+		users, exists := s.userMap[userUUID]
+		if !exists {
 			return E.New("authentication: unknown user ", uuid.UUID(userUUID))
 		}
-		handshakeState := s.quicConn.ConnectionState()
-		tuicToken, err := handshakeState.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
-		if err != nil {
-			return E.Cause(err, "authentication: export keying material")
+
+		var authenticatedUser U
+		for _, user := range users {
+			handshakeState := s.quicConn.ConnectionState()
+			tuicToken, err := handshakeState.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
+			if err != nil {
+				continue // 尝试下一个用户
+			}
+			if bytes.Equal(tuicToken, buffer.Range(2+16, 2+16+32)) {
+				authenticatedUser = user
+				break
+			}
 		}
-		if !bytes.Equal(tuicToken, buffer.Range(2+16, 2+16+32)) {
+
+		if authenticatedUser == nil {
 			return E.New("authentication: token mismatch")
 		}
-		s.authUser = user
+
+		s.authUser = authenticatedUser
 		close(s.authDone)
 		return nil
 	case CommandPacket:
