@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go"
-	qtls "github.com/sagernet/sing-quic"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/baderror"
@@ -45,13 +44,13 @@ type ServiceHandler interface {
 }
 
 type Service[U comparable] struct {
-	ctx        context.Context
-	logger     logger.Logger
-	tlsConfig  aTLS.ServerConfig
-	heartbeat  time.Duration
-	quicConfig *quic.Config
+	ctx               context.Context
+	logger            logger.Logger
+	tlsConfig         aTLS.ServerConfig
+	heartbeat         time.Duration
+	quicConfig        *quic.Config
 	//userMap           map[[16]byte]U
-	userMap           map[[16]byte][]U // 每个 UUID 对应多个用户
+	userMap           map[[16]byte][]U       // 每个 UUID 对应多个用户
 	passwordMap       map[U]string
 	congestionControl string
 	authTimeout       time.Duration
@@ -88,7 +87,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		tlsConfig:         options.TLSConfig,
 		heartbeat:         options.Heartbeat,
 		quicConfig:        quicConfig,
-		userMap:           make(map[[16]byte]U),
+		userMap:           make(map[[16]byte][]U),
 		congestionControl: options.CongestionControl,
 		authTimeout:       options.AuthTimeout,
 		udpTimeout:        options.UDPTimeout,
@@ -108,14 +107,14 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 // }
 
 func (s *Service[U]) UpdateUsers(userList []U, uuidList [][16]byte, passwordList []string) {
-	userMap := make(map[[16]byte][]U)
-	passwordMap := make(map[U]string)
-	for index := range userList {
-		userMap[uuidList[index]] = append(userMap[uuidList[index]], userList[index])
-		passwordMap[userList[index]] = passwordList[index]
-	}
-	s.userMap = userMap
-	s.passwordMap = passwordMap
+    userMap := make(map[[16]byte][]U)
+    passwordMap := make(map[U]string)
+    for index := range userList {
+        userMap[uuidList[index]] = append(userMap[uuidList[index]], userList[index])
+        passwordMap[userList[index]] = passwordList[index]
+    }
+    s.userMap = userMap
+    s.passwordMap = passwordMap
 }
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
@@ -263,19 +262,21 @@ func (s *serverSession[U]) handleUniStream(stream quic.ReceiveStream) error {
 		}
 
 		var authenticatedUser U
+		found := false
 		for _, user := range users {
 			handshakeState := s.quicConn.ConnectionState()
 			tuicToken, err := handshakeState.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
 			if err != nil {
-				continue // 尝试下一个用户
+				continue
 			}
 			if bytes.Equal(tuicToken, buffer.Range(2+16, 2+16+32)) {
 				authenticatedUser = user
+				found = true
 				break
 			}
 		}
 
-		if authenticatedUser == nil {
+		if !found {
 			return E.New("authentication: token mismatch")
 		}
 
