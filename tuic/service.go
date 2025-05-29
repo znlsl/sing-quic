@@ -253,7 +253,7 @@ func (s *serverSession[U]) handleUniStream(stream quic.ReceiveStream) error {
 		found := false
 		for _, user := range users {
 			handshakeState := s.quicConn.ConnectionState()
-			tuicToken, err := handshakeState.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
+			tuicToken, err := handshakeState.TLS.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
 			if err != nil {
 				continue
 			}
