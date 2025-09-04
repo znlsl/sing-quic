@@ -466,6 +466,7 @@ func readUDPMessage(message *udpMessage, reader io.Reader) error {
 	if err != nil {
 		return err
 	}
+	message.destination = message.destination.Unwrap()
 	message.data = buf.NewSize(int(dataLength))
 	_, err = message.data.ReadFullFrom(reader, message.data.FreeLen())
 	if err != nil {
@@ -501,6 +502,7 @@ func decodeUDPMessage(message *udpMessage, data []byte) error {
 	if err != nil {
 		return err
 	}
+	message.destination = message.destination.Unwrap()
 	if reader.Len() != int(dataLength) {
 		return io.ErrUnexpectedEOF
 	}

@@ -347,6 +347,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	if err != nil {
 		return E.Cause(err, "read request destination")
 	}
+	destination = destination.Unwrap()
 	select {
 	case <-s.connDone:
 		return s.connErr
