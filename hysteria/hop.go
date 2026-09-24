@@ -69,6 +69,12 @@ func NewHopConn(
 	if err != nil {
 		return nil, err
 	}
+	if destination.IsFqdn() {
+		remoteAddr := M.SocksaddrFromNet(currentConn.RemoteAddr()).Unwrap()
+		if remoteAddr.IsIP() {
+			hopConn.destination = M.Socksaddr{Addr: remoteAddr.Addr}
+		}
+	}
 	hopConn.currentConn = currentConn
 	qtls.SetDesiredBufferSizes(currentConn)
 	go hopConn.recvLoop(currentConn)
